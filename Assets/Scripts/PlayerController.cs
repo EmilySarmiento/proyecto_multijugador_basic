@@ -9,137 +9,164 @@ using Hashtable = ExitGames.Client.Photon.Hashtable;
 
 public class PlayerController : MonoBehaviourPunCallbacks, IDamageable
 {
-	[SerializeField] Image healthbarImage, healthbarImage2;
-	[SerializeField] GameObject ui;
-	[SerializeField] GameObject cameraHolder;
+    [SerializeField] Image healthbarImage, healthbarImage2;
+    [SerializeField] GameObject ui;
+    [SerializeField] GameObject cameraHolder;
 
-	[SerializeField] float mouseSensitivity, sprintSpeed, walkSpeed, jumpForce, smoothTime;
+    [SerializeField] float mouseSensitivity, sprintSpeed, walkSpeed, jumpForce, smoothTime;
 
-	[SerializeField] Item[] items;
+    [Header("GameObject que verifica si esta sobre el suelo")]
+    [SerializeField] public Transform groundCheckTransform; // GameObject vacío que se usa para verificar si el personaje está sobre el suelo
 
-	int itemIndex;
-	int previousItemIndex = -1;
+    [SerializeField] Item[] items;
 
-	float verticalLookRotation;
-	bool grounded;
-	Vector3 smoothMoveVelocity;
-	Vector3 moveAmount;
+    int itemIndex;
+    int previousItemIndex = -1;
 
-	Rigidbody rb;
+    public float jumpHeight = 1.9f;
+    public float gravityScale = -20f;
+    Vector3 moveInput = Vector3.zero;
 
-	PhotonView PV;
+    float verticalLookRotation;
+    bool grounded;
+    Vector3 smoothMoveVelocity;
+    Vector3 moveAmount;
 
-	const float maxHealth = 100f;
-	float currentHealth = maxHealth;
+    Rigidbody rb;
+    PhotonView PV;
+    CharacterController ch; // Cambié el nombre de 'ch' a 'characterController' para mayor claridad
 
-	PlayerManager playerManager;
+    const float maxHealth = 100f;
+    float currentHealth = maxHealth;
 
-	void Awake()
-	{
-		rb = GetComponent<Rigidbody>();
-		PV = GetComponent<PhotonView>();
+    PlayerManager playerManager;
 
-		playerManager = PhotonView.Find((int)PV.InstantiationData[0]).GetComponent<PlayerManager>();
-	}
+    void Awake()
+    {
+        rb = GetComponent<Rigidbody>();
+        PV = GetComponent<PhotonView>();
+        ch = GetComponent<CharacterController>();
 
-	void Start()
-	{
-		if(PV.IsMine)
-		{
-			EquipItem(0);
-		}
-		else
-		{
-			Destroy(GetComponentInChildren<Camera>().gameObject);
-			Destroy(rb);
-			Destroy(ui);
+        // Verificar si el CharacterController está presente
+        if (ch == null)
+        {
+            Debug.LogError("CharacterController no está asignado. Asegúrate de que el componente esté presente en el GameObject.");
+        }
+
+        playerManager = PhotonView.Find((int)PV.InstantiationData[0]).GetComponent<PlayerManager>();
+    }
+
+    void Start()
+    {
+        if (PV.IsMine)
+        {
+            EquipItem(0);
+        }
+        else
+        {
+            Destroy(GetComponentInChildren<Camera>().gameObject);
+            Destroy(rb);
+            Destroy(ui);
+        }
+    }
+
+    void Update()
+    {
+        Mover();
+        Look();
+
+        if (!PV.IsMine)
+            return;
+
+        for (int i = 0; i < items.Length; i++)
+        {
+            if (Input.GetKeyDown((i + 1).ToString()))
+            {
+                EquipItem(i);
+                break;
+            }
+        }
+
+        if (Input.GetAxisRaw("Mouse ScrollWheel") > 0f)
+        {
+            if (itemIndex >= items.Length - 1)
+            {
+                EquipItem(0);
+            }
+            else
+            {
+                EquipItem(itemIndex + 1);
+            }
+        }
+        else if (Input.GetAxisRaw("Mouse ScrollWheel") < 0f)
+        {
+            if (itemIndex <= 0)
+            {
+                EquipItem(items.Length - 1);
+            }
+            else
+            {
+                EquipItem(itemIndex - 1);
+            }
+        }
+
+        if (Input.GetMouseButtonDown(0))
+        {
+            items[itemIndex].Use();
+        }
+
+        if (transform.position.y < -10f) // Morir si caes fuera del mundo
+        {
+            Die();
+        }
+    }
+
+    void Look()
+    {
+        transform.Rotate(Vector3.up * Input.GetAxisRaw("Mouse X") * mouseSensitivity);
+
+        verticalLookRotation += Input.GetAxisRaw("Mouse Y") * mouseSensitivity;
+        verticalLookRotation = Mathf.Clamp(verticalLookRotation, -90f, 90f);
+
+        cameraHolder.transform.localEulerAngles = Vector3.left * verticalLookRotation;
+    }
+
+    void Mover()
+    {
+        // Verificar si el CharacterController está presente antes de usarlo
+        if (ch == null)
+        {
+            Debug.LogError("CharacterController no está asignado. No se puede mover el jugador.");
+            return; // Salir del método si ch es nulo
+        }
+
+        if (ch.isGrounded)
+        {
+            moveInput = new Vector3(Input.GetAxis("Horizontal"), 0f, Input.GetAxis("Vertical"));
+            moveInput = Vector3.ClampMagnitude(moveInput, 1f);
+            moveInput = transform.TransformDirection(moveInput) * walkSpeed;
+
+            if (Input.GetKeyDown(KeyCode.Space))
+            {
+                Debug.Log("Está saltando!!");
+                moveInput.y = Mathf.Sqrt(jumpHeight * -2f * gravityScale);
+            }
+        }
+
+        moveInput.y += gravityScale * Time.deltaTime;
+        ch.Move(moveInput * Time.deltaTime);
+    }
 
 
+    //void Jump()
+    //{
+    //	if(Input.GetKeyDown(KeyCode.Space) && grounded)
+    //	{
+    //           moveInput.y = Mathf.Sqrt(jumpHeight * -2f * gravityScale);
+    //       }
+    //}
 
-			
-
-		}
-	}
-
-	void Update()
-	{
-		if(!PV.IsMine)
-			return;
-
-		Look();
-		Move();
-		Jump();
-
-		for(int i = 0; i < items.Length; i++)
-		{
-			if(Input.GetKeyDown((i + 1).ToString()))
-			{
-				EquipItem(i);
-				break;
-			}
-		}
-
-		if(Input.GetAxisRaw("Mouse ScrollWheel") > 0f)
-		{
-			if(itemIndex >= items.Length - 1)
-			{
-				EquipItem(0);
-			}
-			else
-			{
-				EquipItem(itemIndex + 1);
-			}
-		}
-		else if(Input.GetAxisRaw("Mouse ScrollWheel") < 0f)
-		{
-			if(itemIndex <= 0)
-			{
-				EquipItem(items.Length - 1);
-			}
-			else
-			{
-				EquipItem(itemIndex - 1);
-			}
-		}
-
-		if(Input.GetMouseButtonDown(0))
-		{
-			items[itemIndex].Use();
-		}
-
-		if(transform.position.y < -10f) // Die if you fall out of the world
-		{
-			Die();
-		}
-
-	}
-
-	void Look()
-	{
-		transform.Rotate(Vector3.up * Input.GetAxisRaw("Mouse X") * mouseSensitivity);
-
-		verticalLookRotation += Input.GetAxisRaw("Mouse Y") * mouseSensitivity;
-		verticalLookRotation = Mathf.Clamp(verticalLookRotation, -90f, 90f);
-
-		cameraHolder.transform.localEulerAngles = Vector3.left * verticalLookRotation;
-	}
-
-	void Move()
-	{
-		Vector3 moveDir = new Vector3(Input.GetAxisRaw("Horizontal"), 0, Input.GetAxisRaw("Vertical")).normalized;
-
-		moveAmount = Vector3.SmoothDamp(moveAmount, moveDir * (Input.GetKey(KeyCode.LeftShift) ? sprintSpeed : walkSpeed), ref smoothMoveVelocity, smoothTime);
-	}
-
-	void Jump()
-	{
-		if(Input.GetKeyDown(KeyCode.Space) && grounded)
-		{
-			rb.AddForce(transform.up * jumpForce);
-		}
-	}
-
-	void EquipItem(int _index)
+    void EquipItem(int _index)
 	{
 		if(_index == previousItemIndex)
 			return;

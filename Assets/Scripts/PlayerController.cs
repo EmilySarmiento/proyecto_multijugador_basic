@@ -15,7 +15,7 @@ public class PlayerController : MonoBehaviourPunCallbacks, IDamageable
 
     [SerializeField] float mouseSensitivity, sprintSpeed, walkSpeed, jumpForce, smoothTime;
 
-    [Header("GameObject que verifica si esta sobre el suelo")]
+    [Header("GameObject que verifica si está sobre el suelo")]
     [SerializeField] public Transform groundCheckTransform; // GameObject vacío que se usa para verificar si el personaje está sobre el suelo
 
     [SerializeField] Item[] items;
@@ -34,7 +34,7 @@ public class PlayerController : MonoBehaviourPunCallbacks, IDamageable
 
     Rigidbody rb;
     PhotonView PV;
-    CharacterController ch; // Cambié el nombre de 'ch' a 'characterController' para mayor claridad
+    CharacterController characterController; // Cambié el nombre a 'characterController' para mayor claridad
 
     const float maxHealth = 100f;
     float currentHealth = maxHealth;
@@ -45,10 +45,10 @@ public class PlayerController : MonoBehaviourPunCallbacks, IDamageable
     {
         rb = GetComponent<Rigidbody>();
         PV = GetComponent<PhotonView>();
-        ch = GetComponent<CharacterController>();
+        characterController = GetComponent<CharacterController>(); // Asignar el CharacterController
 
         // Verificar si el CharacterController está presente
-        if (ch == null)
+        if (characterController == null)
         {
             Debug.LogError("CharacterController no está asignado. Asegúrate de que el componente esté presente en el GameObject.");
         }
@@ -134,13 +134,13 @@ public class PlayerController : MonoBehaviourPunCallbacks, IDamageable
     void Mover()
     {
         // Verificar si el CharacterController está presente antes de usarlo
-        if (ch == null)
+        if (characterController == null)
         {
             Debug.LogError("CharacterController no está asignado. No se puede mover el jugador.");
-            return; // Salir del método si ch es nulo
+            return; // Salir del método si characterController es nulo
         }
 
-        if (ch.isGrounded)
+        if (characterController.isGrounded)
         {
             moveInput = new Vector3(Input.GetAxis("Horizontal"), 0f, Input.GetAxis("Vertical"));
             moveInput = Vector3.ClampMagnitude(moveInput, 1f);
@@ -154,7 +154,7 @@ public class PlayerController : MonoBehaviourPunCallbacks, IDamageable
         }
 
         moveInput.y += gravityScale * Time.deltaTime;
-        ch.Move(moveInput * Time.deltaTime);
+        characterController.Move(moveInput * Time.deltaTime);
     }
 
 

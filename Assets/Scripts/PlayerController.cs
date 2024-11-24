@@ -28,6 +28,7 @@ public class PlayerController : MonoBehaviourPunCallbacks, IDamageable
     Vector3 moveInput = Vector3.zero;
 
     float verticalLookRotation;
+    float hotizontalLookRotation;
     bool grounded;
     Vector3 smoothMoveVelocity;
     Vector3 moveAmount;
@@ -126,7 +127,7 @@ public class PlayerController : MonoBehaviourPunCallbacks, IDamageable
         transform.Rotate(Vector3.up * Input.GetAxisRaw("Mouse X") * mouseSensitivity);
 
         verticalLookRotation += Input.GetAxisRaw("Mouse Y") * mouseSensitivity;
-        verticalLookRotation = Mathf.Clamp(verticalLookRotation, -90f, 90f);
+        verticalLookRotation = Mathf.Clamp(verticalLookRotation, -45f, 45f);
 
         cameraHolder.transform.localEulerAngles = Vector3.left * verticalLookRotation;
     }

@@ -1963,8 +1963,8 @@ MonoBehaviour:
   ui: {fileID: 216237048506700666}
   cameraHolder: {fileID: 1223421601457111949}
   mouseSensitivity: 1
-  sprintSpeed: 8
-  walkSpeed: 3
+  sprintSpeed: 10
+  walkSpeed: 4
   jumpForce: 2
   smoothTime: 0.15
   groundCheckTransform: {fileID: 1123146133350016986}

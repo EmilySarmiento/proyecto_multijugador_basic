@@ -1,240 +1,217 @@
-﻿using Photon.Pun;
-using Photon.Realtime;
-using TMPro;
-using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
-using UnityEngine.UI;
-using Hashtable = ExitGames.Client.Photon.Hashtable;
+﻿using Photon.Pun; // Import Photon library for networking
+using Photon.Realtime; // Import library for player management in networking
+using TMPro; // Import library for 3D text
+using System.Collections; // Import library for collections
+using System.Collections.Generic; // Import library for generic collections
+using UnityEngine; // Import main Unity library
+using UnityEngine.UI; // Import library for user interface
+using Hashtable = ExitGames.Client.Photon.Hashtable; // Alias for Photon's Hashtable class
 
-public class PlayerController : MonoBehaviourPunCallbacks, IDamageable
+public class PlayerController : MonoBehaviourPunCallbacks, IDamageable // Class that controls the player
 {
-    [SerializeField] Image healthbarImage, healthbarImage2;
-    [SerializeField] GameObject ui;
-    [SerializeField] GameObject cameraHolder;
+    // User interface variables
+    [SerializeField] private Image healthbarImage, healthbarImage2; // Health bars
+    [SerializeField] private GameObject ui; // Player UI
+    [SerializeField] private GameObject cameraHolder; // Camera holder
 
-    [SerializeField] float mouseSensitivity, sprintSpeed, walkSpeed, jumpForce, smoothTime;
+    // Player configuration variables
+    [SerializeField] private float mouseSensitivity, sprintSpeed, walkSpeed, jumpForce, smoothTime;
 
-    [Header("GameObject que verifica si está sobre el suelo")]
-    [SerializeField] public Transform groundCheckTransform; // GameObject vacío que se usa para verificar si el personaje está sobre el suelo
+    [Header("Ground Check")]
+    [SerializeField] private Transform groundCheckTransform; // Transform to check if player is grounded
 
-    [SerializeField] Item[] items;
+    [SerializeField] private Item[] items; // Array of items player can use
 
-    int itemIndex;
-    int previousItemIndex = -1;
+    private int itemIndex; // Current item index
+    private int previousItemIndex = -1; // Previous item index
 
-    public float jumpHeight = 1.9f;
-    public float gravityScale = -20f;
-    Vector3 moveInput = Vector3.zero;
+    private const float maxHealth = 100f; // Maximum player health
+    private float currentHealth = maxHealth; // Current player health
 
-    float verticalLookRotation;
-    float hotizontalLookRotation;
-    bool grounded;
-    Vector3 smoothMoveVelocity;
-    Vector3 moveAmount;
+    private Rigidbody rb; // Player Rigidbody component
+    private PhotonView PV; // PhotonView component for networking
+    private CharacterController characterController; // CharacterController component for movement
 
-    Rigidbody rb;
-    PhotonView PV;
-    CharacterController characterController; // Cambié el nombre a 'characterController' para mayor claridad
+    private Vector3 moveInput; // Player movement input
+    private float verticalLookRotation; // Vertical camera rotation
+    private bool grounded; // Is player grounded?
 
-    const float maxHealth = 100f;
-    float currentHealth = maxHealth;
-
-    PlayerManager playerManager;
+    private PlayerManager playerManager; // Reference to PlayerManager
 
     void Awake()
-    {
-        rb = GetComponent<Rigidbody>();
-        PV = GetComponent<PhotonView>();
-        characterController = GetComponent<CharacterController>(); // Asignar el CharacterController
-
-        // Verificar si el CharacterController está presente
-        if (characterController == null)
         {
-            Debug.LogError("CharacterController no está asignado. Asegúrate de que el componente esté presente en el GameObject.");
-        }
+            // Initialize components
+            rb = GetComponent<Rigidbody>();
+            PV = GetComponent<PhotonView>();
+            characterController = GetComponent<CharacterController>();
 
-        playerManager = PhotonView.Find((int)PV.InstantiationData[0]).GetComponent<PlayerManager>();
-    }
+            // Check if CharacterController is present
+            if (characterController == null)
+            {
+                Debug.LogError("CharacterController is not assigned.");
+            }
+
+            // Find associated PlayerManager
+            playerManager = PhotonView.Find((int)PV.InstantiationData[0]).GetComponent<PlayerManager>();
+        }
 
     void Start()
-    {
-        if (PV.IsMine)
         {
-            EquipItem(0);
-        }
-        else
-        {
-            Destroy(GetComponentInChildren<Camera>().gameObject);
-            Destroy(rb);
-            Destroy(ui);
-        }
-    }
-
-    void Update()
-    {
-        Mover();
-        Look();
-
-        if (!PV.IsMine)
-            return;
-
-        for (int i = 0; i < items.Length; i++)
-        {
-            if (Input.GetKeyDown((i + 1).ToString()))
-            {
-                EquipItem(i);
-                break;
-            }
-        }
-
-        if (Input.GetAxisRaw("Mouse ScrollWheel") > 0f)
-        {
-            if (itemIndex >= items.Length - 1)
+            // If this is the local player, equip first item
+            if (PV.IsMine)
             {
                 EquipItem(0);
             }
             else
             {
-                EquipItem(itemIndex + 1);
+                // If not local player, destroy camera and UI
+                Destroy(GetComponentInChildren<Camera>().gameObject);
+                Destroy(rb);
+                Destroy(ui);
             }
         }
-        else if (Input.GetAxisRaw("Mouse ScrollWheel") < 0f)
+
+     void Update()
         {
-            if (itemIndex <= 0)
+            // Only execute code if this is the local player
+            if (!PV.IsMine) return;
+
+            // Handle movement, looking, item switching, and item usage
+            HandleMovement();
+            HandleLook();
+            HandleItemSwitching();
+            HandleItemUsage();
+            CheckFallDeath();
+        }
+
+        private void HandleMovement()
+        {
+            // Check if player is grounded
+            if (characterController.isGrounded)
             {
-                EquipItem(items.Length - 1);
-            }
-            else
-            {
-                EquipItem(itemIndex - 1);
-            }
-        }
-
-        if (Input.GetMouseButtonDown(0))
-        {
-            items[itemIndex].Use();
-        }
-
-        if (transform.position.y < -10f) // Morir si caes fuera del mundo
-        {
-            Die();
-        }
-    }
-
-    void Look()
-    {
-        transform.Rotate(Vector3.up * Input.GetAxisRaw("Mouse X") * mouseSensitivity);
-
-        verticalLookRotation += Input.GetAxisRaw("Mouse Y") * mouseSensitivity;
-        verticalLookRotation = Mathf.Clamp(verticalLookRotation, -45f, 45f);
-
-        cameraHolder.transform.localEulerAngles = Vector3.left * verticalLookRotation;
-    }
-
-    void Mover()
-    {
-        // Verificar si el CharacterController está presente antes de usarlo
-        if (characterController == null)
-        {
-            Debug.LogError("CharacterController no está asignado. No se puede mover el jugador.");
-            return; // Salir del método si characterController es nulo
-        }
-
-        if (characterController.isGrounded)
-        {
+            // Get movement input
             moveInput = new Vector3(Input.GetAxis("Horizontal"), 0f, Input.GetAxis("Vertical"));
             moveInput = Vector3.ClampMagnitude(moveInput, 1f);
             moveInput = transform.TransformDirection(moveInput) * walkSpeed;
 
+            // Handle jumping
             if (Input.GetKeyDown(KeyCode.Space))
+                {
+                    moveInput.y = Mathf.Sqrt(jumpForce * -2f * Physics.gravity.y); // Calculate jump force
+                }
+            }
+
+            // Apply gravity
+            moveInput.y += Physics.gravity.y * Time.deltaTime;
+            characterController.Move(moveInput * Time.deltaTime); // Move player
+        }
+
+       private void HandleLook()
+        {
+            // Handle horizontal player rotation
+            transform.Rotate(Vector3.up * Input.GetAxisRaw("Mouse X") * mouseSensitivity);
+
+            // Handle vertical camera rotation
+            verticalLookRotation = Mathf.Clamp(verticalLookRotation + Input.GetAxisRaw("Mouse Y") * mouseSensitivity, -45f, 45f);
+            cameraHolder.transform.localEulerAngles = Vector3.left * verticalLookRotation;
+        }
+
+
+        private void HandleItemSwitching()
             {
-                Debug.Log("Está saltando!!");
-                moveInput.y = Mathf.Sqrt(jumpHeight * -2f * gravityScale);
+                for (int i = 0; i < items.Length; i++)
+                {
+                    if (Input.GetKeyDown((i + 1).ToString()))
+                    {
+                        EquipItem(i);
+                        break;
+                    }
+                }
+
+                if (Input.GetAxisRaw("Mouse ScrollWheel") > 0f)
+                {
+                    EquipItem((itemIndex + 1) % items.Length);
+                }
+                else if (Input.GetAxisRaw("Mouse ScrollWheel") < 0f)
+                {
+                    EquipItem((itemIndex - 1 + items.Length) % items.Length);
+                }
+            }
+
+        private void HandleItemUsage()
+        {
+            if (Input.GetMouseButtonDown(0))
+            {
+                items[itemIndex].Use();
             }
         }
 
-        moveInput.y += gravityScale * Time.deltaTime;
-        characterController.Move(moveInput * Time.deltaTime);
-    }
+        private void CheckFallDeath()
+        {
+            if (transform.position.y < -10f)
+            {
+                Die();
+            }
+        }
+
+        private void EquipItem(int _index)
+        {
+            if (_index == previousItemIndex) return;
+
+            itemIndex = _index;
+            items[itemIndex].itemGameObject.SetActive(true);
+
+            if (previousItemIndex != -1)
+            {
+                items[previousItemIndex].itemGameObject.SetActive(false);
+            }
+
+            previousItemIndex = itemIndex;
+
+            if (PV.IsMine)
+            {
+                Hashtable hash = new Hashtable { { "itemIndex", itemIndex } };
+                PhotonNetwork.LocalPlayer.SetCustomProperties(hash);
+            }
+        }
+
+        public override void OnPlayerPropertiesUpdate(Player targetPlayer, Hashtable changedProps)
+        {
+            if (changedProps.ContainsKey("itemIndex") && !PV.IsMine && targetPlayer == PV.Owner)
+            {
+                EquipItem((int)changedProps["itemIndex"]);
+            }
+        }
+
+        public void SetGroundedState(bool _grounded)
+	    {
+		    grounded = _grounded;
+	    }
 
 
-    //void Jump()
-    //{
-    //	if(Input.GetKeyDown(KeyCode.Space) && grounded)
-    //	{
-    //           moveInput.y = Mathf.Sqrt(jumpHeight * -2f * gravityScale);
-    //       }
-    //}
+	    public void TakeDamage(float damage)
+	    {
+		    PV.RPC(nameof(RPC_TakeDamage), PV.Owner, damage);
+	    }
 
-    void EquipItem(int _index)
-	{
-		if(_index == previousItemIndex)
-			return;
+	    [PunRPC]
+	    void RPC_TakeDamage(float damage, PhotonMessageInfo info)
+	    {
+		    currentHealth -= damage;
 
-		itemIndex = _index;
+		    healthbarImage2.fillAmount = currentHealth / maxHealth;
 
-		items[itemIndex].itemGameObject.SetActive(true);
+		    healthbarImage.fillAmount = currentHealth / maxHealth;
 
-		if(previousItemIndex != -1)
-		{
-			items[previousItemIndex].itemGameObject.SetActive(false);
-		}
+		    if (currentHealth <= 0)
+		    {
+			    Die();
+			    PlayerManager.Find(info.Sender).GetKill();
+		    }
+	    }
 
-		previousItemIndex = itemIndex;
-
-		if(PV.IsMine)
-		{
-			Hashtable hash = new Hashtable();
-			hash.Add("itemIndex", itemIndex);
-			PhotonNetwork.LocalPlayer.SetCustomProperties(hash);
-		}
-	}
-
-	public override void OnPlayerPropertiesUpdate(Player targetPlayer, Hashtable changedProps)
-	{
-		if(changedProps.ContainsKey("itemIndex") && !PV.IsMine && targetPlayer == PV.Owner)
-		{
-			EquipItem((int)changedProps["itemIndex"]);
-		}
-	}
-
-	public void SetGroundedState(bool _grounded)
-	{
-		grounded = _grounded;
-	}
-
-	void FixedUpdate()
-	{
-		if(!PV.IsMine)
-			return;
-
-		rb.MovePosition(rb.position + transform.TransformDirection(moveAmount) * Time.fixedDeltaTime);
-	}
-
-	public void TakeDamage(float damage)
-	{
-		PV.RPC(nameof(RPC_TakeDamage), PV.Owner, damage);
-	}
-
-	[PunRPC]
-	void RPC_TakeDamage(float damage, PhotonMessageInfo info)
-	{
-		currentHealth -= damage;
-
-		healthbarImage2.fillAmount = currentHealth / maxHealth;
-
-		healthbarImage.fillAmount = currentHealth / maxHealth;
-
-		if (currentHealth <= 0)
-		{
-			Die();
-			PlayerManager.Find(info.Sender).GetKill();
-		}
-	}
-
-	void Die()
-	{
-		playerManager.Die();
-	}
+	    void Die()
+	    {
+		    playerManager.Die();
+	    }
 }
